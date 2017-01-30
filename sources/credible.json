@@ -1,0 +1,59 @@
+{
+  "bbc.com": {
+    "type": ""
+  },
+  "bostonglobe.com": {
+    "type": ""
+  },
+  "chicagotribune.com": {
+    "type": ""
+  },
+  "independent.co.uk": {
+    "type": ""
+  },
+  "latimes.com": {
+    "type": ""
+  },
+  "reuters.com": {
+    "type": ""
+  },
+  "nature.com": {
+    "type": ""
+  },
+  "newyorktimes.com": {
+    "type": ""
+  },
+  "nydailynews.com": {
+    "type": ""
+  },
+  "nytimes.com": {
+    "type": ""
+  },
+  "oregonlive.com": {
+    "type": ""
+  },
+  "phys.org": {
+    "type": ""
+  },
+  "sltrib.com": {
+    "type": ""
+  },
+  "scientificamerican.com": {
+    "type": ""
+  },
+  "sfgate.com": {
+    "type": ""
+  },
+  "slate.com": {
+    "type": ""
+  },
+  "usatoday.com": {
+    "type": ""
+  },
+  "washingtonpost.com": {
+    "type": ""
+  },
+  "wsj.com": {
+    "type": ""
+  }
+}
