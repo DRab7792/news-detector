@@ -1,3 +1,4 @@
+#!/usr/bin/python2.7
 import requests  
 import json
 import sys
@@ -44,7 +45,7 @@ def assignFeeds(sources):
 	for type in iter(["notCredible"]):
 		for url, info in sources[type].items():
 			url = "http://" + url
-			print ("Getting feed for " + url)
+			print "Getting feed for " + url
 			if ('language' not in info):
 				info['language'] = "en"
 			info = getSiteInfo(url, info)
