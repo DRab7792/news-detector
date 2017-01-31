@@ -32,6 +32,13 @@ def getAndParseFeed(url):
 					val = getattr(cur, prop).text
 					article[prop] = val
 
+			# Get any category tags
+			catTags = cur.findAll("category")
+			categories = ""
+			for cat in catTags:
+				categories = categories + cat.text + ". "
+			article["categories"] = categories
+
 			# Add to articles list
 			articles.append(article)
 
@@ -45,7 +52,8 @@ def getAndParseFeed(url):
 def analyzeArticles(articles, langClient):
 	stemmer = PorterStemmer()
 	for cur in articles:
-		text = cur['title'] + " " + cur['description']
+		text = cur['title'] + " " + cur['description'] + " " + cur['categories']
+		print (text)
 		document = langClient.document_from_text(text)
 		entities = document.analyze_entities()
 		cur['analysis'] = {
