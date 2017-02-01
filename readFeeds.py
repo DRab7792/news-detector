@@ -11,7 +11,7 @@ from config import getConfig
 from google.cloud import language
 from nltk.stem.porter import PorterStemmer
 
-def getAndParseFeed(url):
+def getAndParseFeed(source, url, existingIds):
 	articles = []
 
 	# Try to get the feed
@@ -25,12 +25,18 @@ def getAndParseFeed(url):
 		for cur in items:
 
 			# Parse item
-			article = {}
+			article = {
+				"source": source
+			}
 			props = ["title", "link", "description", "guid", "pubdate"]
 			for prop in props:
 				if getattr(cur, prop) is not None:
 					val = getattr(cur, prop).text
 					article[prop] = val
+
+			# Exclude existing articles
+			if article["guid"] in existingIds:
+				continue
 
 			# Get any category tags
 			catTags = cur.findAll("category")
@@ -50,10 +56,9 @@ def getAndParseFeed(url):
 
 
 def analyzeArticles(articles, langClient):
-	stemmer = PorterStemmer()
 	for cur in articles:
 		text = cur['title'] + " " + cur['description'] + " " + cur['categories']
-		print (text)
+		# print (text)
 		document = langClient.document_from_text(text)
 		entities = document.analyze_entities()
 		cur['analysis'] = {
@@ -70,14 +75,12 @@ def analyzeArticles(articles, langClient):
 				curType = "who"
 			elif curEntity.entity_type == "LOCATION" or curEntity.entity_type == "EVENT":
 				curType = "where"
-			if curType == "what":
-				name = stemmer.stem(name)
 			slug = slugify(name)
 			if slug not in cur["analysis"][curType]:
 				cur["analysis"][curType][slug] = 1
 			else:
 				cur["analysis"][curType][slug] = cur["analysis"][curType][slug] + 1
-		print (cur["analysis"])
+		# print (cur["analysis"])
 
 			
 	return articles
@@ -89,6 +92,29 @@ def getSourcesWithFeeds(db):
 	cursor.execute(sql)
 	return cursor.fetchall()
 
+def getExistingArticleIds(db, id):
+	sql = "SELECT source_id FROM articles WHERE source = '" + str(id) + "'"
+	cursor = db.cursor()
+	cursor.execute(sql)
+	return cursor.fetchall()
+
+def saveArticles(db, articles):
+	adjArticles = []
+	sql = "INSERT INTO articles (source, title, url, description, source_id, time, who, what, loc) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+	for cur in articles:
+		adjArticles.append((
+			str(cur["source"]),
+			cur["title"].encode("utf8"),
+			cur["link"].encode("utf8"),
+			cur["description"].encode("utf8"),
+			cur["guid"].encode("utf8"),
+			cur["analysis"]["when"].encode("utf8"),
+			json.dumps(cur["analysis"]["who"]),
+			json.dumps(cur["analysis"]["what"]),
+			json.dumps(cur["analysis"]["where"])
+		))
+	db.cursor().executemany(sql, adjArticles)
+	db.commit()
 
 def main():
 	config = getConfig()
@@ -99,9 +125,11 @@ def main():
 	sourceFeeds = getSourcesWithFeeds(db)
 	
 	for (id, title, rss_feed) in sourceFeeds:
-		articles = getAndParseFeed(rss_feed)
+		existingIds = getExistingArticleIds(db, id)
+		articles = getAndParseFeed(id, rss_feed, existingIds)
 		analyzeArticles(articles, langClient)
-		break
+		saveArticles(db, articles)
+		# break
 
 main()
 # import pip
