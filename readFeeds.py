@@ -64,7 +64,8 @@ def analyzeArticles(articles, langClient):
 		cur['analysis'] = {
 			"where": {},
 			"who": {},
-			"what": {}
+			"what": {},
+			"when": ""
 		}
 		if "pubdate" in cur:
 			cur['analysis']['when'] = cur['pubdate']
