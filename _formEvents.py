@@ -4,19 +4,14 @@ import pip
 import json
 import arrow
 import sys
-import re
-import string
 import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup  
 import mysql.connector
 from slugify import slugify
 from config import getConfig
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem.lancaster import LancasterStemmer
-nltk.download("stopwords")
-st = LancasterStemmer()
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
 
 timeFormat = "ddd, DD MMM YYYY HH:mm:ss ZZ"
 timeFormatAlt = "ddd, D MMM YYYY HH:mm:ss ZZ"
@@ -46,25 +41,6 @@ def parseArticles(articles):
 		what = json.loads(cur[9])
 		loc = json.loads(cur[10])
 
-		# Form word dictionary
-		text = cur[3] + " " + cur[5]
-		text = text.lower()
-		words = string.split(text, " ")
-		words = [word for word in words if word not in stopwords.words('english')]
-		numWords = len(words)
-		wordDict = {}
-		for curWord in words:
-			curWord = re.sub(r'[^\w\s]','',curWord)
-			curWord = st.stem(curWord)
-			if curWord in wordDict:
-				wordDict[curWord] = wordDict[curWord] + 1
-			else:
-				wordDict[curWord] = 1
-
-		# Normalize word frequency
-		for curWord, freq in wordDict.items():
-			wordDict[curWord] = float(freq) / numWords
-
 		# Append article data to new array
 		adjArticle = {
 			"id": cur[0],
@@ -72,14 +48,52 @@ def parseArticles(articles):
 			"who": who,
 			"what": what,
 			"loc": loc,
-			"title": cur[3],
-			"description": cur[5],
-			"words": wordDict
+			"title": cur[3]
 		}
 		
 		adjArticles.append(adjArticle)
 
 	return adjArticles
+
+def formIdf(articles):
+	matrix = {}
+
+	# Create document id map
+	docMap = {}
+	ids = []
+	titles = []
+	emptyArr = []
+	i = 0
+	for cur in articles:
+		docMap[cur["id"]] = i
+		ids.append(cur["id"])
+		titles.append(cur["title"])
+		emptyArr.append(0)
+		i = i + 1
+
+	maxVal = 0
+	maxWord = ""
+	for curArticle in articles:
+		maps = ["who", "what", "loc"]
+		for curMap in maps:
+			for word, num in curArticle[curMap].items():
+				if num > maxVal:
+					maxVal = num
+					maxWord = word
+				if word not in matrix:
+					matrix[word] = list(emptyArr)
+				matrix[word][docMap[curArticle["id"]]] = num
+
+	print ("Words in matrix: " + str(len(matrix)))
+	print ("Maximum occurances of word in a single doc: " + str(maxVal))
+	print ("Most popular word: " + word)
+
+	# Form actual matrix
+	lists = []
+	for word, arr in matrix.items():
+		lists.append(arr)
+
+	return lists, ids, titles
 
 
 def getArticles(db):
@@ -96,6 +110,22 @@ def main():
 	articles = getArticles(db)
 
 	adjArticles = parseArticles(articles)
-	print (adjArticles[2])
+
+	words, ids, titles = formIdf(adjArticles)
+
+	dist = 1 - cosine_similarity(words)
+	
+	num_clusters = 20
+	km = KMeans(n_clusters=num_clusters)
+
+	km.fit(words)
+
+	clusters = km.labels_.tolist()
+
+	articleData = { 'title': titles, 'cluster': clusters, 'id': ids}
+
+	frame = pd.DataFrame(articleData, index = [clusters], columns = ['title', 'cluster', 'id'])
+
+	print (frame['cluster'].value_counts())
 
 main()
