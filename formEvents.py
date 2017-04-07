@@ -9,84 +9,103 @@ import string
 import pandas as pd
 import numpy as np
 from bs4 import BeautifulSoup  
+from HTMLParser import HTMLParser
 import mysql.connector
 from slugify import slugify
 from config import getConfig
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem.lancaster import LancasterStemmer
-nltk.download("stopwords")
-st = LancasterStemmer()
+from sklearn.metrics.pairwise import cosine_similarity
 
-timeFormat = "ddd, DD MMM YYYY HH:mm:ss ZZ"
-timeFormatAlt = "ddd, D MMM YYYY HH:mm:ss ZZ"
+FACTOR = 30
 
 def parseArticles(articles):
-	global timeFormat
 	adjArticles = []
 	for cur in articles:
-		if (len(cur) != 11):
-			continue
-
-		# Try to parse time
-		time = cur[7]
-		if time == "": 
-			continue
-		time = time.replace("GMT", "+00:00")
-		time = time.replace("PST", "-08:00")
-		time = time.replace("EDT", "-05:00")
-		try:
-			time = arrow.get(time, timeFormat)
-		except Exception as e:
-			time = arrow.get(time, timeFormatAlt)
-			continue
-		
-		# Parse the json objects
-		who = json.loads(cur[8])
-		what = json.loads(cur[9])
-		loc = json.loads(cur[10])
-
-		# Form word dictionary
-		text = cur[3] + " " + cur[5]
-		text = text.lower()
-		words = string.split(text, " ")
-		words = [word for word in words if word not in stopwords.words('english')]
-		numWords = len(words)
-		wordDict = {}
-		for curWord in words:
-			curWord = re.sub(r'[^\w\s]','',curWord)
-			curWord = st.stem(curWord)
-			if curWord in wordDict:
-				wordDict[curWord] = wordDict[curWord] + 1
-			else:
-				wordDict[curWord] = 1
-
-		# Normalize word frequency
-		for curWord, freq in wordDict.items():
-			wordDict[curWord] = float(freq) / numWords
-
-		# Append article data to new array
-		adjArticle = {
+		adjArticles.append({
 			"id": cur[0],
-			"time": time,
-			"who": who,
-			"what": what,
-			"loc": loc,
-			"title": cur[3],
-			"description": cur[5],
-			"words": wordDict
-		}
-		
-		adjArticles.append(adjArticle)
+			"words": json.loads(cur[1])
+		})
 
 	return adjArticles
 
-
 def getArticles(db):
-	sql = "SELECT * FROM articles WHERE event = 0 LIMIT 200"
+	sql = "SELECT id, words FROM articles WHERE words != '' "
 	cursor = db.cursor()
 	cursor.execute(sql)
 	return cursor.fetchall()
+
+def calcWeight(a, b):
+	weight = 0.0
+
+	# Create sparse vectors
+	allKeys = a.keys() + b.keys()
+
+	# Get unique keys
+	allKeys = list(set(allKeys))
+
+	aVals = []
+	bVals = []
+	for key in allKeys:
+		if key not in a:
+			aVals.append(0.0)
+		else:
+			aVals.append(a[key])
+
+		if key not in b:
+			bVals.append(0.0)
+		else:
+			bVals.append(b[key])
+
+	similarity = cosine_similarity(aVals, bVals)
+	weight = similarity[0][0] * FACTOR
+
+	return weight
+
+def calcEdges(articles):
+	edges = []
+	# Iterate through all nodes
+	for source in articles:
+		# Get the sorted source words
+		sourceWords = sorted(source["words"], key=source["words"].get, reverse=True)
+
+		for dest in articles:
+			if source["id"] is dest["id"]:
+				continue
+
+			# Get the sorted dest words
+			destWords = sorted(dest["words"], key=dest["words"].get, reverse=True)
+
+			# Make sure the most frequent words appear in both lists
+			if destWords[0] not in sourceWords or sourceWords[0] not in destWords:
+				continue;
+
+			weight = calcWeight(dest["words"], source["words"])
+
+			# If weight is FACTOR, it is probably the same article
+			if weight is FACTOR:
+				print (str(source["id"]) + " is the same as " + str(dest["id"]))
+
+			newEdge = {
+				"source": source["id"],
+				"dest": dest["id"],
+				"weight": weight
+			}
+
+			edges.append(newEdge)
+
+
+	return edges
+
+def saveEdges(db, edges):
+	adjEdges = []
+	sql = "INSERT INTO articleLinks (source, dest, weight) VALUES (%s, %s, %s)"
+	for cur in edges:
+		adjEdges.append((
+			str(cur["source"]),
+			str(cur["dest"]),
+			str(cur["weight"])
+		))
+	db.cursor().executemany(sql, adjEdges)
+	db.commit()
 
 def main():
 	config = getConfig()
@@ -95,7 +114,10 @@ def main():
 
 	articles = getArticles(db)
 
-	adjArticles = parseArticles(articles)
-	print (adjArticles[2])
+	articles = parseArticles(articles)
+
+	edges = calcEdges(articles)
+
+	saveEdges(db, edges)
 
 main()

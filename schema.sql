@@ -39,7 +39,8 @@ CREATE TABLE `articles` (
   `title` varchar(1000) NOT NULL,
   `url` varchar(300) NOT NULL,
   `description` text NOT NULL,
-  `source_id` varchar(200) NOT NULL
+  `source_id` varchar(200) NOT NULL,
+  `words` text NOT NULL,
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -93,13 +94,20 @@ CREATE TABLE `sources` (
 
 -- --------------------------------------------------------
 
---
--- Structure for view `articlelinks`
---
-DROP TABLE IF EXISTS `articlelinks`;
+CREATE TABLE `articleLinks` (
+  `id` int(11) NOT NULL,
+  `source` int(11) NOT NULL,
+  `dest` int(11) NOT NULL,
+  `weight` float NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `articlelinks`  AS  select `articles`.`id` AS `id`,`articles`.`event` AS `event`,`articles`.`source` AS `source`,count(`articles`.`id`) AS `weight` from `articles` group by `articles`.`event`,`articles`.`source` ;
+--
+-- Indexes for table `articleLinks`
+--
+ALTER TABLE `articleLinks`
+  ADD PRIMARY KEY (`id`);
 
+ALTER TABLE `articleLinks` ADD UNIQUE( `source`, `dest`);
 --
 -- Indexes for dumped tables
 --
