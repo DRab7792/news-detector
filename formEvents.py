@@ -1,4 +1,4 @@
-#!~/Library/Python/2.7
+#!~/Library/Python/2.7 -W ignore::DeprecationWarning
 import requests  
 import pip
 import json
@@ -7,6 +7,7 @@ import sys
 import re
 import string
 import pandas as pd
+import math
 import numpy as np
 from bs4 import BeautifulSoup  
 from HTMLParser import HTMLParser
@@ -14,6 +15,8 @@ import mysql.connector
 from slugify import slugify
 from config import getConfig
 from sklearn.metrics.pairwise import cosine_similarity
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
 FACTOR = 30
 
@@ -28,7 +31,7 @@ def parseArticles(articles):
 	return adjArticles
 
 def getArticles(db):
-	sql = "SELECT id, words FROM articles WHERE words != '' "
+	sql = "SELECT id, words FROM articles WHERE words != ''"
 	cursor = db.cursor()
 	cursor.execute(sql)
 	return cursor.fetchall()
@@ -64,6 +67,7 @@ def calcEdges(articles):
 	edges = []
 	# Iterate through all nodes
 	for source in articles:
+		print ("Source " + str(source["id"]))
 		# Get the sorted source words
 		sourceWords = sorted(source["words"], key=source["words"].get, reverse=True)
 
@@ -96,16 +100,29 @@ def calcEdges(articles):
 	return edges
 
 def saveEdges(db, edges):
-	adjEdges = []
+
+	perBatch = 500
+	batches = int(math.ceil(len(edges)/perBatch))
+
+	print ("Inserting " + str(len(edges)) + " into db, " + str(batches) + " batches")
+
 	sql = "INSERT INTO articleLinks (source, dest, weight) VALUES (%s, %s, %s)"
-	for cur in edges:
-		adjEdges.append((
-			str(cur["source"]),
-			str(cur["dest"]),
-			str(cur["weight"])
-		))
-	db.cursor().executemany(sql, adjEdges)
-	db.commit()
+	for batch in range(batches):
+		print ("DB Batch " + str(batch))
+		adjEdges = []
+		for i in range((batch*perBatch), ((batch+1)*perBatch)):
+			if i >= len(edges): 
+				break
+			cur = edges[i]
+			adjEdges.append((
+				str(cur["source"]),
+				str(cur["dest"]),
+				str(cur["weight"])
+			))
+		db.cursor().executemany(sql, adjEdges)
+		db.commit()
+
+	print ("Done")
 
 def main():
 	config = getConfig()
