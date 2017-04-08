@@ -1,4 +1,4 @@
-#!~/Library/Python/2.7 -W ignore::DeprecationWarning
+#!~/Library/Python/2.7
 import requests  
 import pip
 import json
@@ -23,6 +23,7 @@ FACTOR = 30
 def parseArticles(articles):
 	adjArticles = []
 	for cur in articles:
+		# print (cur[1])
 		adjArticles.append({
 			"id": cur[0],
 			"words": json.loads(cur[1])
@@ -31,7 +32,8 @@ def parseArticles(articles):
 	return adjArticles
 
 def getArticles(db):
-	sql = "SELECT id, words FROM articles WHERE words != ''"
+	# Ignore articles with empty word maps
+	sql = "SELECT id, words  FROM articles WHERE words != '' AND CONCAT(title, description) != ''"
 	cursor = db.cursor()
 	cursor.execute(sql)
 	return cursor.fetchall()
