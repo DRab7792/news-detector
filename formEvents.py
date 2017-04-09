@@ -1,142 +1,165 @@
-#!~/Library/Python/2.7
-import requests  
-import pip
-import json
-import arrow
-import sys
-import re
-import string
-import pandas as pd
-import math
-import numpy as np
-from bs4 import BeautifulSoup  
-from HTMLParser import HTMLParser
 import mysql.connector
-from slugify import slugify
+import networkx as nx
+import math
+import inspect
+import matplotlib.pyplot as plt
+execfile("community.py")
+from scipy.cluster.hierarchy import dendrogram
+from operator import itemgetter
 from config import getConfig
-from sklearn.metrics.pairwise import cosine_similarity
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
-FACTOR = 30
+def getEdges(db, threshold):
+	sql = "SELECT count(id) FROM articleLinks WHERE weight > " + str(threshold)
+	cursor = db.cursor()
+	cursor.execute(sql)
+	numEdges = cursor.fetchone()
+	numEdges = itemgetter(0)(numEdges)
 
-def parseArticles(articles):
-	adjArticles = []
-	for cur in articles:
-		# print (cur[1])
-		adjArticles.append({
-			"id": cur[0],
-			"words": json.loads(cur[1])
+	perBatch = 1000
+	batches = int(math.ceil(numEdges/perBatch))
+	# batches = 50
+	
+	edges = []
+	for batch in range(batches):
+		print ("Getting batch " + str(batch))
+		sql = "SELECT * FROM articleLinks WHERE weight > " + str(threshold) + " LIMIT " + str(perBatch)
+		sql += " OFFSET " + str(batch * perBatch)
+		cursor = db.cursor()
+		cursor.execute(sql)
+		batchEdges = cursor.fetchall()
+		edges = edges + batchEdges
+
+	return edges
+
+def parseEdges(edges):
+	adjEdges = []
+	for cur in edges:
+		adjEdges.append({
+			"id": int(cur[0]),
+			"source": int(cur[1]),
+			"dest": int(cur[2]),
+			"weight": float(cur[3])
 		})
-
-	return adjArticles
+	return adjEdges
 
 def getArticles(db):
 	# Ignore articles with empty word maps
-	sql = "SELECT id, words  FROM articles WHERE words != '' AND CONCAT(title, description) != ''"
+	sql = "SELECT a.id as `id`, a.title as `article_title`, b.title as `source_title` FROM `articles` a  INNER JOIN `sources` b ON a.source = b.id"
 	cursor = db.cursor()
 	cursor.execute(sql)
 	return cursor.fetchall()
 
-def calcWeight(a, b):
-	weight = 0.0
+def parseArticles(articles):
+	adjArticles = []
+	for cur in articles:
+		adjArticles.append({
+			"id": cur[0],
+			"title": cur[1].encode('ascii', 'ignore'),
+			"source": cur[2].encode('ascii', 'ignore')
+		})
+	return adjArticles
 
-	# Create sparse vectors
-	allKeys = a.keys() + b.keys()
+def formGraph(nodes, edges):
+	graph = nx.Graph()
 
-	# Get unique keys
-	allKeys = list(set(allKeys))
+	for cur in nodes:
+		graph.add_node(cur["id"], cur)
 
-	aVals = []
-	bVals = []
-	for key in allKeys:
-		if key not in a:
-			aVals.append(0.0)
-		else:
-			aVals.append(a[key])
+	for cur in edges:
+		graph.add_edge(cur["source"], cur["dest"], cur)
 
-		if key not in b:
-			bVals.append(0.0)
-		else:
-			bVals.append(b[key])
+	return graph.to_undirected()
 
-	similarity = cosine_similarity(aVals, bVals)
-	weight = similarity[0][0] * FACTOR
+def removeOrphans(graph):
+	solitary=[ n for n,d in graph.degree_iter() if d==0 ]
+	for cur in solitary:
+		graph.remove_node(cur)
+	return graph
 
-	return weight
+def saveGraph(graph, threshold):
+	nx.write_gml(graph, "data/article-similarities" + str(threshold) + ".gml")
 
-def calcEdges(articles):
-	edges = []
-	# Iterate through all nodes
-	for source in articles:
-		print ("Source " + str(source["id"]))
-		# Get the sorted source words
-		sourceWords = sorted(source["words"], key=source["words"].get, reverse=True)
+def cluster(graph):
+	dendrogram = generate_dendrogram(graph)
+	print (len(dendrogram))
+	for level in range(len(dendrogram)):
+		curPartition = partition_at_level(dendrogram, level)
+		print ("length of partition at level", level, "is", len(curPartition.keys()))
+	return dendrogram
 
-		for dest in articles:
-			if source["id"] is dest["id"]:
-				continue
+def saveDendrogram(heirarchy):
+	graph = nx.DiGraph(heirarchy)
+	nodes = graph.nodes()
+	leaves      = set( n for n in nodes if graph.degree(n) == 0 )
+	inner_nodes = [ n for n in nodes if graph.degree(n) > 0 ]
 
-			# Get the sorted dest words
-			destWords = sorted(dest["words"], key=dest["words"].get, reverse=True)
+	# Compute the size of each subtree
+	subtree = dict( (n, [n]) for n in leaves )
+	for u in inner_nodes:
+	    children = set()
+	    node_list = list(d[u])
+	    while len(node_list) > 0:
+	        v = node_list.pop(0)
+	        children.add( v )
+	        node_list += d[v]
 
-			# Make sure the most frequent words appear in both lists
-			if destWords[0] not in sourceWords or sourceWords[0] not in destWords:
-				continue;
+	    subtree[u] = sorted(children & leaves)
 
-			weight = calcWeight(dest["words"], source["words"])
+	inner_nodes.sort(key=lambda n: len(subtree[n]))
 
-			# If weight is FACTOR, it is probably the same article
-			if weight is FACTOR:
-				print (str(source["id"]) + " is the same as " + str(dest["id"]))
+	# Construct the linkage matrix
+	leaves = sorted(leaves)
+	index  = dict( (tuple([n]), i) for i, n in enumerate(leaves) )
+	Z = []
+	k = len(leaves)
+	for i, n in enumerate(inner_nodes):
+	    children = d[n]
+	    x = children[0]
+	    for y in children[1:]:
+	        z = tuple(subtree[x] + subtree[y])
+	        i, j = index[tuple(subtree[x])], index[tuple(subtree[y])]
+	        Z.append([i, j, float(len(subtree[n])), len(z)]) # <-- float is required by the dendrogram function
+	        index[z] = k
+	        subtree[z] = list(z)
+	        x = z
+	        k += 1
 
-			newEdge = {
-				"source": source["id"],
-				"dest": dest["id"],
-				"weight": weight
-			}
-
-			edges.append(newEdge)
-
-
-	return edges
-
-def saveEdges(db, edges):
-
-	perBatch = 500
-	batches = int(math.ceil(len(edges)/perBatch))
-
-	print ("Inserting " + str(len(edges)) + " into db, " + str(batches) + " batches")
-
-	sql = "INSERT INTO articleLinks (source, dest, weight) VALUES (%s, %s, %s)"
-	for batch in range(batches):
-		print ("DB Batch " + str(batch))
-		adjEdges = []
-		for i in range((batch*perBatch), ((batch+1)*perBatch)):
-			if i >= len(edges): 
-				break
-			cur = edges[i]
-			adjEdges.append((
-				str(cur["source"]),
-				str(cur["dest"]),
-				str(cur["weight"])
-			))
-		db.cursor().executemany(sql, adjEdges)
-		db.commit()
-
-	print ("Done")
+	# Visualize
+	dendrogram(Z, labels=leaves)
+	plt.savefig("visualizations/articleLinksDendrogram.png");
 
 def main():
+	threshold = 20
+
 	config = getConfig()
 
 	db = mysql.connector.connect(user = config['db']['user'], password = config['db']['password'], host = config['db']['host'], database = config['db']['database'])
 
+	print ("Get edges")
+	edges = getEdges(db, threshold)
+
+	print ("Parse edges")
+	edges = parseEdges(edges)
+
+	print ("Get articles")
 	articles = getArticles(db)
 
+	print ("Parse articles")
 	articles = parseArticles(articles)
 
-	edges = calcEdges(articles)
+	print ("Form Graph")
+	graph = formGraph(articles, edges)
 
-	saveEdges(db, edges)
+	print ("Eliminate Orphans")
+	graph = removeOrphans(graph)
+
+	print ("Perform Heriarchical Clustering")
+	dendrogram = cluster(graph)
+
+	# print ("Save dendrogram with modularity")
+	# dendrogram = saveDendrogram(dendrogram, modularity)
+
+	print ("Save graph")
+	saveGraph(graph, threshold)
 
 main()
