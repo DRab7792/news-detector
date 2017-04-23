@@ -18,7 +18,7 @@ def getEdges(db, threshold):
 
 	perBatch = 1000
 	batches = int(ceil(numEdges/perBatch))
-	batches = 5
+	# batches = 5
 	
 	edges = []
 	for batch in range(batches):
@@ -80,15 +80,17 @@ def removeOrphans(graph):
 def saveGraph(graph, threshold):
 	nx.write_gml(graph, "data/article-similarities" + str(threshold) + ".gml")
 
-def formClusteringLevels(links):
+def formClusteringLevels(links, graph):
+	nodeIds = graph.adj.keys()
 	levels = {}
 	for i in range(0, 430, 10):
 		nodeClusters = fcluster(links, float(i), 'distance')
 
 		clusterDicts = {}
 
-		for nodeId in range(len(nodeClusters)):
-			clusterId = nodeClusters[nodeId]
+		for nodeNum in range(len(nodeClusters)):
+			nodeId = nodeIds[nodeNum]
+			clusterId = nodeClusters[nodeNum]
 			if clusterId in clusterDicts:
 				clusterDicts[clusterId].append(nodeId)
 			else:
@@ -98,49 +100,18 @@ def formClusteringLevels(links):
 
 	return levels
 
-# # Get all the nodes in a cluster
-# def getClusterNodes(cluster):
-# 	visited = set()
-# 	queue = [cluster]
-# 	nodes = []
-# 	# Perform breadth first search
-# 	while len(queue) > 0:
-# 		curNode = queue.pop()
-# 		if curNode and curNode not in visited:
-# 			visited.add(curNode)
-
-# 			# Create the levels map
-# 			if curNode.is_leaf():
-# 				# print ("curNode")
-# 				# print (curNode.get_left())
-# 				# print (curNode.get_right())
-# 				nodes.append(curNode.get_id())
-			
-# 			left = curNode.get_left()
-# 			right = curNode.get_right()
-			
-# 			queue.extend([left, right])
-	
-# 	return nodes
-
-def subgraph(graph, nodes):
-	newGraph = graph.copy()
-	exclude = []
-	for cur in newGraph.nodes_iter():
-		if cur not in nodes:
-			exclude.append(cur)
-	newGraph.remove_nodes_from(exclude)
-	return newGraph
-
 def calcModularities(levels, graph):
+	print ("Number of nodes: " + str(len(graph)))
+	print ("Number of edges: " + str(graph.number_of_edges()))
+
 	modularities = {}
 	graphEdges = float(graph.number_of_edges())
 	# Iterate through all levels
 	for levelDist, clusters in levels.iteritems():
 		levelModularities = []
 
-		print ("-------------------------")
-		print ("Level Distance: " + str(levelDist))
+		# print ("-------------------------")
+		# print ("Level Distance: " + str(levelDist))
 
 		# Iterate through clusters
 		for clusterId, clusterNodes in clusters.iteritems():
@@ -155,15 +126,13 @@ def calcModularities(levels, graph):
 			adj = (clusterEdges / graphEdges)
 			rnd = pow((clusterDegree / (2 * graphEdges)), 2)
 
-
-			print ("Cluster Nodes: " + str(len(clusterNodes)))
-			# print (clusterNodes)
-			print ("Cluster Graph Nodes: " + str(len(clusterGraph)))
-			# print (clusterGraph.nodes())
-			print ("Cluster Edges: " +  str(clusterEdges))
-			print ("Real wiring: " +  str(adj))
-			print ("Cluster degree: " +  str(clusterDegree))
-			print ("Random: " + str(rnd))
+			# print ("Graph Nodes: " + str(len(graph.nodes())))
+			# print ("Cluster Nodes: " + str(len(clusterNodes)))
+			# print ("Cluster Graph Nodes: " + str(len(clusterGraph)))
+			# print ("Cluster Edges: " +  str(clusterEdges))
+			# print ("Real wiring: " +  str(adj))
+			# print ("Cluster degree: " +  str(clusterDegree))
+			# print ("Random: " + str(rnd))
 
 			clusterModularity = adj - rnd
 
@@ -175,7 +144,14 @@ def calcModularities(levels, graph):
 	return modularities
 
 
-def saveEvents(clusters, graph, db):
+def saveEvents(clusters, db):
+	# Use the saved article id attribute stored in the graph nodes to update the articles and events tables
+	for clusterId, clusterNodes in clusters.iteritems():
+		origSql = "UPDATE articles SET event = " + str(clusterId) + " WHERE id = "
+		for curNode in clusterNodes:
+			sql = origSql + str(curNode)
+			db.cursor().execute(sql)
+			db.commit()
 	return
 
 
@@ -192,23 +168,20 @@ def graphModularities(modularities):
 		yVals.append(modularities[i])
 
 	plt.plot(xVals, yVals)
-	plt.vlines(maxI, 0.0, (maxVal + 0.03), '#ff0000', 'dashed', "Optimal Modularity")
+	plt.vlines(maxI, -0.2, (maxVal + 0.03), '#ff0000', 'dashed', "Optimal Modularity")
 	plt.savefig("visualizations/modularities.png")
 	plt.clf()
 
 	return maxI
 
 def cluster(graph):
-	print ("Number of nodes: " + str(len(graph)))
-	print ("Number of edges: " + str(graph.number_of_edges()))
 	matrix = nx.to_numpy_matrix(graph)
 	links = linkage(matrix, method='complete')
 	order = leaves_list(links)
 	
 	
 	tree = to_tree(links)
-	levels = formClusteringLevels(links)
-	# plotScreeplot(links)
+	levels = formClusteringLevels(links, graph)
 	modularities = calcModularities(levels, graph)
 	maxModularityDist = graphModularities(modularities)
 
@@ -224,27 +197,9 @@ def cluster(graph):
 	plt.savefig("visualizations/articleLinksDendrogram.png")
 	plt.clf()
 
-def plotScreeplot(z):
-	# Plotting
-	plt.plot(range(1, len(z)+1), z[::-1, 2])
-	knee = np.diff(z[::-1, 2], 2)
-	plt.plot(range(2, len(z)), knee)
+	# Return optimal communities
+	return levels[maxModularityDist]
 
-	num_clust1 = knee.argmax() + 2
-	knee[knee.argmax()] = 0
-	num_clust2 = knee.argmax() + 2
-
-	plt.text(num_clust1, z[::-1, 2][num_clust1-1], 'possible\n<- knee point')
-
-	part1 = fcluster(z, num_clust1, 'maxclust')
-	part2 = fcluster(z, num_clust2, 'maxclust')
-
-	clr = ['#2200CC' ,'#D9007E' ,'#FF6600' ,'#FFCC00' ,'#ACE600' ,'#0099CC' ,
-	'#8900CC' ,'#FF0000' ,'#FF9900' ,'#FFFF00' ,'#00CC01' ,'#0055CC']
-
-	# plt.setp(title='Screeplot', xlabel='partition', ylabel='cluster distance')
-	plt.savefig('visualizations/screeplot.png')
-	plt.clf()
 
 def saveDendrogram(heirarchy):
 	graph = nx.DiGraph(heirarchy)
@@ -286,7 +241,7 @@ def saveDendrogram(heirarchy):
 	
 
 def main():
-	threshold = 20
+	threshold = 18
 
 	config = getConfig()
 
@@ -310,13 +265,13 @@ def main():
 	print ("Eliminate Orphans")
 	graph = removeOrphans(graph)
 
-	print ("Perform Heriarchical Clustering")
-	dendrogram = cluster(graph)
-
-	# print ("Save dendrogram with modularity")
-	# dendrogram = saveDendrogram(dendrogram, modularity)
-
 	print ("Save graph")
 	saveGraph(graph, threshold)
+
+	print ("Perform Heriarchical Clustering")
+	communities = cluster(graph)
+
+	print ("Save events")
+	saveEvents(communities, db)
 
 main()
