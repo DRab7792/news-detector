@@ -3,7 +3,7 @@
 -- http://www.phpmyadmin.net
 --
 -- Host: localhost
--- Generation Time: Jan 30, 2017 at 05:54 AM
+-- Generation Time: Apr 24, 2017 at 06:04 AM
 -- Server version: 10.1.10-MariaDB
 -- PHP Version: 5.6.19
 
@@ -14,17 +14,43 @@ SET time_zone = "+00:00";
 -- Database: `news`
 --
 
+DELIMITER $$
+--
+-- Procedures
+--
+CREATE DEFINER=`root`@`localhost` PROCEDURE `CumulativeEdgeDistro` ()  BEGIN
+  DECLARE i INT;
+  DECLARE edges INT;
+  DECLARE nodes INT;
+  DECLARE density FLOAT;
+  SET i = 0;
+  SET nodes = (SELECT count(`id`) FROM `articles`);
+  DROP TABLE IF EXISTS distro;
+  CREATE TEMPORARY TABLE distro (`min_weight` INTEGER, `edges` INTEGER, `density` FLOAT);
+  WHILE i < 30
+  DO 
+    SET i = i + 1;
+    SET edges = (SELECT count(`id`) FROM articleLinks WHERE `weight` > i LIMIT 1);
+    SET density = (2*edges)/(nodes * (nodes - 1));
+    INSERT INTO distro (`min_weight`, `edges`, `density`) VALUES (i, edges, density);
+  END WHILE;
+  SELECT * FROM distro;
+END$$
+
+DELIMITER ;
+
 -- --------------------------------------------------------
 
 --
--- Stand-in structure for view `articlelinks`
+-- Table structure for table `articleLinks`
 --
-CREATE TABLE `articlelinks` (
-`id` int(11)
-,`event` int(11)
-,`source` int(11)
-,`weight` bigint(21)
-);
+
+CREATE TABLE `articleLinks` (
+  `id` int(11) NOT NULL,
+  `source` int(11) NOT NULL,
+  `dest` int(11) NOT NULL,
+  `weight` float NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
 
@@ -39,21 +65,12 @@ CREATE TABLE `articles` (
   `title` varchar(1000) NOT NULL,
   `url` varchar(300) NOT NULL,
   `description` text NOT NULL,
-  `source_id` varchar(200) NOT NULL,
-  `words` text NOT NULL,
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `eventLinks`
---
-
-CREATE TABLE `eventLinks` (
-  `id` int(11) NOT NULL,
-  `event_a` int(11) NOT NULL,
-  `event_b` int(11) NOT NULL,
-  `distance` float NOT NULL
+  `source_id` varchar(500) NOT NULL,
+  `time` varchar(100) NOT NULL,
+  `who` text NOT NULL,
+  `what` text NOT NULL,
+  `loc` text NOT NULL,
+  `words` text NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -64,14 +81,19 @@ CREATE TABLE `eventLinks` (
 
 CREATE TABLE `events` (
   `id` int(11) NOT NULL,
-  `updated` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `who` text NOT NULL,
-  `what` text NOT NULL,
-  `loc` text NOT NULL,
-  `time` text NOT NULL,
-  `categories` text NOT NULL,
-  `rank` float NOT NULL
+  `num_articles` int(11) NOT NULL,
+  `keywords` text NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `eventstats`
+--
+CREATE TABLE `eventstats` (
+`event` int(11)
+,`number_of_articles` bigint(21)
+);
 
 -- --------------------------------------------------------
 
@@ -94,34 +116,28 @@ CREATE TABLE `sources` (
 
 -- --------------------------------------------------------
 
-CREATE TABLE `articleLinks` (
-  `id` int(11) NOT NULL,
-  `source` int(11) NOT NULL,
-  `dest` int(11) NOT NULL,
-  `weight` float NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
 --
--- Indexes for table `articleLinks`
+-- Structure for view `eventstats`
 --
-ALTER TABLE `articleLinks`
-  ADD PRIMARY KEY (`id`);
+DROP TABLE IF EXISTS `eventstats`;
 
-ALTER TABLE `articleLinks` ADD UNIQUE( `source`, `dest`);
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `eventstats`  AS  select `articles`.`event` AS `event`,count(`articles`.`id`) AS `number_of_articles` from `articles` where (`articles`.`event` > 0) group by `articles`.`event` ;
+
 --
 -- Indexes for dumped tables
 --
 
 --
+-- Indexes for table `articleLinks`
+--
+ALTER TABLE `articleLinks`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `source` (`source`,`dest`);
+
+--
 -- Indexes for table `articles`
 --
 ALTER TABLE `articles`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `eventLinks`
---
-ALTER TABLE `eventLinks`
   ADD PRIMARY KEY (`id`);
 
 --
@@ -141,20 +157,15 @@ ALTER TABLE `sources`
 --
 
 --
+-- AUTO_INCREMENT for table `articleLinks`
+--
+ALTER TABLE `articleLinks`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3114001;
+--
 -- AUTO_INCREMENT for table `articles`
 --
 ALTER TABLE `articles`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
---
--- AUTO_INCREMENT for table `eventLinks`
---
-ALTER TABLE `eventLinks`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
---
--- AUTO_INCREMENT for table `events`
---
-ALTER TABLE `events`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4378;
 --
 -- AUTO_INCREMENT for table `sources`
 --

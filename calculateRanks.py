@@ -1,1 +1,0 @@
-# Account for multiple articles from the same source for the same event
