@@ -99,6 +99,12 @@ def addDegreeCentrality(graph):
 		graph.node[nodeId]["degreeCentrality"] = value
 	return graph
 
+def addKatzCentrality(graph):
+	katz = nx.katz_centrality(graph, max_iter=5000, tol=1e-02, weight='weight')
+	for nodeId, value in katz.iteritems():
+		graph.node[nodeId]["katz"] = value
+	return graph
+
 def addDegree(graph):
 	for cur in graph.nodes(data=True):
 		cur[1]["degree"] = graph.degree(cur[0])
@@ -229,6 +235,16 @@ def evAnalysis(graph):
 	print ("Save ev centrality values")
 	saveAnalysis("ev", res)
 
+def katzAnalysis(graph):
+	print ("Add Katz Centralities")
+	graph = addKatzCentrality(graph)
+
+	print ("Analyze katz centrality values")
+	res = analyzeSourceResults(graph, "katz", 0.0, 0.3, 0.005)
+
+	print ("Save katz centrality values")
+	saveAnalysis("katz", res)
+
 def hitsAnalysis(graph):
 	print ("Add Hits Centralities")
 	graph = addHitsCentrality(graph)
@@ -269,6 +285,8 @@ def main():
 	addDegree(graph)
 
 	evAnalysis(graph)
+
+	# katzAnalysis(graph)
 
 	degreeAnalysis(graph)
 
