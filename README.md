@@ -100,5 +100,7 @@ Finally, a confusion matrix is formed with all the centrality values. The test c
 
 `analysis-{centrality}.csv` - The confusion matrix results for that particular centrality.
 
+`visualizations/eventSourceSnapshot.png` - The confusion matrix results for the custom centrality at a threshold value of 10.
+
 `visualizations/analysis-custom-10.png` - The confusion matrix results for the custom centrality at a threshold value of 10.
 
